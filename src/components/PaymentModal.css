@@ -1,0 +1,88 @@
+.payment-modal { max-width: 440px; }
+
+.payment-content-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px;
+  background: var(--color-dark-surface);
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+}
+.payment-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: white;
+}
+.payment-amount {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--color-primary-light);
+  font-size: 1.1rem;
+}
+
+.payment-error {
+  padding: 10px 14px;
+  background: rgba(196,30,36,0.12);
+  border: 1px solid rgba(196,30,36,0.3);
+  border-radius: var(--radius-md);
+  color: var(--color-primary-light);
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+}
+
+.phone-input-wrap {
+  position: relative;
+}
+.phone-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-light-faint);
+}
+
+.payment-note {
+  font-size: 0.8rem;
+  color: var(--color-light-faint);
+}
+
+.otp-hint {
+  padding: 10px 14px;
+  background: rgba(5,150,105,0.12);
+  border: 1px solid rgba(5,150,105,0.3);
+  border-radius: var(--radius-md);
+  color: #34D399;
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.otp-input {
+  text-align: center;
+  font-size: 1.5rem !important;
+  letter-spacing: 8px;
+  font-family: var(--font-display) !important;
+  font-weight: 700;
+}
+
+.payment-success {
+  text-align: center;
+  padding: 20px 0;
+}
+.success-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(5, 150, 105, 0.15);
+  color: #34D399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 1.8rem;
+}
+.payment-success p { color: var(--color-light-dim); }
+
+.spin { animation: spin 1s linear infinite; }

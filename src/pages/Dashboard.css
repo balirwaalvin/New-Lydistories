@@ -1,0 +1,85 @@
+.dashboard-page { padding: 40px 0; }
+
+.dash-header { margin-bottom: 32px; }
+.dash-header h1 { font-size: 1.8rem; margin-bottom: 4px; }
+.dash-header p { color: var(--color-light-faint); }
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 40px;
+}
+
+.dash-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 24px;
+  background: var(--color-dark-card);
+  border: 1px solid var(--color-dark-border);
+  border-radius: var(--radius-lg);
+}
+
+.ds-icon { font-size: 1.4rem; color: var(--color-primary); flex-shrink: 0; }
+.ds-num { font-family: var(--font-display); font-weight: 800; font-size: 1.2rem; color: white; }
+.ds-label { font-size: 0.8rem; color: var(--color-light-faint); }
+
+.dash-section { margin-bottom: 40px; }
+.dash-section h2 { font-size: 1.3rem; margin-bottom: 16px; }
+
+.dash-content-list { display: flex; flex-direction: column; gap: 8px; }
+
+.dash-content-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  text-decoration: none !important;
+  color: inherit !important;
+  gap: 16px;
+}
+
+.dci-info h3 { font-size: 0.95rem; color: white; font-weight: 600; }
+.dci-info p { font-size: 0.8rem; color: var(--color-light-faint); margin-top: 2px; }
+
+.dci-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  min-width: 140px;
+}
+.dci-progress span {
+  font-size: 0.8rem;
+  color: var(--color-light-faint);
+  font-weight: 600;
+  min-width: 35px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--color-dark-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--gradient-primary);
+  border-radius: 999px;
+  transition: width 0.3s;
+}
+
+.dash-empty {
+  text-align: center;
+  padding: 40px;
+  background: var(--color-dark-card);
+  border: 1px solid var(--color-dark-border);
+  border-radius: var(--radius-lg);
+}
+.dash-empty p { color: var(--color-light-faint); margin-bottom: 16px; }
+
+@media (max-width: 768px) {
+  .dash-stats { grid-template-columns: 1fr; }
+}
