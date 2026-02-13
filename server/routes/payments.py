@@ -4,11 +4,9 @@ import string
 import datetime
 from database import get_db
 from routes.auth import login_required
+import psycopg2.extras
 
 payments_bp = Blueprint('payments', __name__)
-
-# In-memory OTP store (in production, use Redis or DB)
-pending_otps = {}
 
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
@@ -22,48 +20,52 @@ def initiate_payment():
     data = request.get_json()
     content_id = data.get('content_id')
     phone_number = data.get('phone_number', '').strip()
-    
+
     if not content_id or not phone_number:
         return jsonify({'error': 'Content ID and phone number are required'}), 400
-    
-    # Validate phone number format (Uganda)
+
     if not phone_number.startswith('+256') and not phone_number.startswith('0'):
         return jsonify({'error': 'Please enter a valid Ugandan phone number'}), 400
-    
-    db = get_db()
-    
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
     # Check if user already has access
-    access = db.execute(
-        'SELECT id FROM user_content_access WHERE user_id = ? AND content_id = ?',
+    cur.execute(
+        'SELECT id FROM user_content_access WHERE user_id = %s AND content_id = %s',
         (g.user_id, content_id)
-    ).fetchone()
-    
+    )
+    access = cur.fetchone()
+
     if access:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'You already have access to this content'}), 400
-    
+
     # Get content price
-    content = db.execute('SELECT id, title, price FROM content WHERE id = ?', (content_id,)).fetchone()
+    cur.execute('SELECT id, title, price FROM content WHERE id = %s', (content_id,))
+    content = cur.fetchone()
     if not content:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Content not found'}), 404
-    
+
     # Generate OTP
     otp = generate_otp()
     txn_id = generate_transaction_id()
-    
+
     # Create pending payment
-    cursor = db.execute('''
+    cur.execute('''
         INSERT INTO payments (user_id, content_id, phone_number, amount, transaction_id, otp_code, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending')
+        VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+        RETURNING id
     ''', (g.user_id, content_id, phone_number, content['price'], txn_id, otp))
-    
-    payment_id = cursor.lastrowid
-    db.commit()
-    db.close()
-    
-    # In a real app, this OTP would be sent via SMS
-    # For simulation, we return it in the response
+
+    payment_id = cur.fetchone()['id']
+    conn.commit()
+    cur.close()
+    conn.close()
+
     return jsonify({
         'message': f'Payment initiated for "{content["title"]}". Enter the OTP to confirm.',
         'payment_id': payment_id,
@@ -80,38 +82,45 @@ def confirm_payment():
     data = request.get_json()
     payment_id = data.get('payment_id')
     otp = data.get('otp', '').strip()
-    
+
     if not payment_id or not otp:
         return jsonify({'error': 'Payment ID and OTP are required'}), 400
-    
-    db = get_db()
-    payment = db.execute(
-        'SELECT * FROM payments WHERE id = ? AND user_id = ? AND status = ?',
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        'SELECT * FROM payments WHERE id = %s AND user_id = %s AND status = %s',
         (payment_id, g.user_id, 'pending')
-    ).fetchone()
-    
+    )
+    payment = cur.fetchone()
+
     if not payment:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Payment not found or already processed'}), 404
-    
+
     if payment['otp_code'] != otp:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Invalid OTP. Please try again.'}), 400
-    
+
     # Confirm payment
-    db.execute('UPDATE payments SET status = ? WHERE id = ?', ('confirmed', payment_id))
-    
+    cur.execute('UPDATE payments SET status = %s WHERE id = %s', ('confirmed', payment_id))
+
     # Grant content access
-    db.execute('''
-        INSERT OR IGNORE INTO user_content_access (user_id, content_id)
-        VALUES (?, ?)
+    cur.execute('''
+        INSERT INTO user_content_access (user_id, content_id)
+        VALUES (%s, %s)
+        ON CONFLICT DO NOTHING
     ''', (g.user_id, payment['content_id']))
-    
-    db.commit()
-    
-    content = db.execute('SELECT title FROM content WHERE id = ?', (payment['content_id'],)).fetchone()
-    db.close()
-    
+
+    conn.commit()
+
+    cur.execute('SELECT title FROM content WHERE id = %s', (payment['content_id'],))
+    content = cur.fetchone()
+    cur.close()
+    conn.close()
+
     return jsonify({
         'message': f'Payment confirmed! You now have access to "{content["title"]}".',
         'transaction_id': payment['transaction_id'],
@@ -121,14 +130,22 @@ def confirm_payment():
 @payments_bp.route('/api/payments/history', methods=['GET'])
 @login_required
 def payment_history():
-    db = get_db()
-    payments = db.execute('''
-        SELECT p.*, c.title as content_title 
-        FROM payments p 
-        LEFT JOIN content c ON p.content_id = c.id 
-        WHERE p.user_id = ? 
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute('''
+        SELECT p.*, c.title as content_title
+        FROM payments p
+        LEFT JOIN content c ON p.content_id = c.id
+        WHERE p.user_id = %s
         ORDER BY p.created_at DESC
-    ''', (g.user_id,)).fetchall()
-    db.close()
-    
+    ''', (g.user_id,))
+    payments = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    # Serialize datetimes
+    for p in payments:
+        if 'created_at' in p and p['created_at']:
+            p['created_at'] = str(p['created_at'])
+
     return jsonify({'payments': [dict(p) for p in payments]})

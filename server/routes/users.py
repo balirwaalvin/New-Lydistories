@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, g
 from database import get_db
 from routes.auth import login_required, admin_required
+import psycopg2.extras
 
 users_bp = Blueprint('users', __name__)
 
@@ -9,36 +10,56 @@ users_bp = Blueprint('users', __name__)
 @users_bp.route('/api/users', methods=['GET'])
 @admin_required
 def list_users():
-    db = get_db()
-    users = db.execute('SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC').fetchall()
-    db.close()
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute('SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC')
+    users = cur.fetchall()
+    cur.close()
+    conn.close()
+    for u in users:
+        u['created_at'] = str(u['created_at'])
     return jsonify({'users': [dict(u) for u in users]})
 
 @users_bp.route('/api/users/stats', methods=['GET'])
 @admin_required
 def get_stats():
-    db = get_db()
-    total_users = db.execute('SELECT COUNT(*) as c FROM users WHERE role = "user"').fetchone()['c']
-    total_content = db.execute('SELECT COUNT(*) as c FROM content').fetchone()['c']
-    total_payments = db.execute('SELECT COUNT(*) as c FROM payments WHERE status = "confirmed"').fetchone()['c']
-    total_revenue_row = db.execute('SELECT COALESCE(SUM(amount), 0) as r FROM payments WHERE status = "confirmed"').fetchone()
-    total_revenue = total_revenue_row['r']
-    recent_payments = db.execute('''
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute("SELECT COUNT(*) as c FROM users WHERE role = 'user'")
+    total_users = cur.fetchone()['c']
+
+    cur.execute('SELECT COUNT(*) as c FROM content')
+    total_content = cur.fetchone()['c']
+
+    cur.execute("SELECT COUNT(*) as c FROM payments WHERE status = 'confirmed'")
+    total_payments = cur.fetchone()['c']
+
+    cur.execute("SELECT COALESCE(SUM(amount), 0) as r FROM payments WHERE status = 'confirmed'")
+    total_revenue = cur.fetchone()['r']
+
+    cur.execute('''
         SELECT p.*, u.name as user_name, c.title as content_title
         FROM payments p
         LEFT JOIN users u ON p.user_id = u.id
         LEFT JOIN content c ON p.content_id = c.id
-        WHERE p.status = "confirmed"
+        WHERE p.status = 'confirmed'
         ORDER BY p.created_at DESC LIMIT 10
-    ''').fetchall()
-    db.close()
-    
+    ''')
+    recent_payments = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    for p in recent_payments:
+        if 'created_at' in p and p['created_at']:
+            p['created_at'] = str(p['created_at'])
+
     return jsonify({
         'stats': {
             'total_users': total_users,
             'total_content': total_content,
             'total_payments': total_payments,
-            'total_revenue': total_revenue,
+            'total_revenue': float(total_revenue),
             'recent_payments': [dict(p) for p in recent_payments]
         }
     })
@@ -47,44 +68,56 @@ def get_stats():
 @admin_required
 def update_user(user_id):
     data = request.get_json()
-    db = get_db()
-    
-    user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+    user = cur.fetchone()
     if not user:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'User not found'}), 404
-    
+
     role = data.get('role', user['role'])
     name = data.get('name', user['name'])
-    
-    db.execute('UPDATE users SET role = ?, name = ? WHERE id = ?', (role, name, user_id))
-    db.commit()
-    
-    updated = db.execute('SELECT id, name, email, role, created_at FROM users WHERE id = ?', (user_id,)).fetchone()
-    db.close()
-    
+
+    cur.execute('UPDATE users SET role = %s, name = %s WHERE id = %s', (role, name, user_id))
+    conn.commit()
+
+    cur.execute('SELECT id, name, email, role, created_at FROM users WHERE id = %s', (user_id,))
+    updated = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    updated['created_at'] = str(updated['created_at'])
     return jsonify({'user': dict(updated)})
 
 @users_bp.route('/api/users/<int:user_id>', methods=['DELETE'])
 @admin_required
 def delete_user(user_id):
-    db = get_db()
-    user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+    user = cur.fetchone()
     if not user:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'User not found'}), 404
     if user['role'] == 'admin':
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Cannot delete admin user'}), 400
-    
-    db.execute('DELETE FROM bookmarks WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM reading_progress WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM user_content_access WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM payments WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM users WHERE id = ?', (user_id,))
-    db.commit()
-    db.close()
-    
+
+    cur.execute('DELETE FROM bookmarks WHERE user_id = %s', (user_id,))
+    cur.execute('DELETE FROM reading_progress WHERE user_id = %s', (user_id,))
+    cur.execute('DELETE FROM user_content_access WHERE user_id = %s', (user_id,))
+    cur.execute('DELETE FROM payments WHERE user_id = %s', (user_id,))
+    cur.execute('DELETE FROM users WHERE id = %s', (user_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
     return jsonify({'message': 'User deleted successfully'})
 
 # ── Bookmarks ──
@@ -92,16 +125,24 @@ def delete_user(user_id):
 @users_bp.route('/api/bookmarks', methods=['GET'])
 @login_required
 def get_bookmarks():
-    db = get_db()
-    bookmarks = db.execute('''
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute('''
         SELECT b.id, b.created_at, c.id as content_id, c.title, c.author, c.category,
                c.description, c.cover_image, c.price
         FROM bookmarks b
         JOIN content c ON b.content_id = c.id
-        WHERE b.user_id = ?
+        WHERE b.user_id = %s
         ORDER BY b.created_at DESC
-    ''', (g.user_id,)).fetchall()
-    db.close()
+    ''', (g.user_id,))
+    bookmarks = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    for b in bookmarks:
+        if 'created_at' in b and b['created_at']:
+            b['created_at'] = str(b['created_at'])
+
     return jsonify({'bookmarks': [dict(b) for b in bookmarks]})
 
 @users_bp.route('/api/bookmarks', methods=['POST'])
@@ -109,28 +150,34 @@ def get_bookmarks():
 def add_bookmark():
     data = request.get_json()
     content_id = data.get('content_id')
-    
+
     if not content_id:
         return jsonify({'error': 'Content ID is required'}), 400
-    
-    db = get_db()
+
+    conn = get_db()
+    cur = conn.cursor()
     try:
-        db.execute('INSERT INTO bookmarks (user_id, content_id) VALUES (?, ?)', (g.user_id, content_id))
-        db.commit()
+        cur.execute('INSERT INTO bookmarks (user_id, content_id) VALUES (%s, %s)', (g.user_id, content_id))
+        conn.commit()
     except Exception:
-        db.close()
+        conn.rollback()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Bookmark already exists'}), 409
-    
-    db.close()
+
+    cur.close()
+    conn.close()
     return jsonify({'message': 'Bookmark added'}), 201
 
 @users_bp.route('/api/bookmarks/<int:content_id>', methods=['DELETE'])
 @login_required
 def remove_bookmark(content_id):
-    db = get_db()
-    db.execute('DELETE FROM bookmarks WHERE user_id = ? AND content_id = ?', (g.user_id, content_id))
-    db.commit()
-    db.close()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM bookmarks WHERE user_id = %s AND content_id = %s', (g.user_id, content_id))
+    conn.commit()
+    cur.close()
+    conn.close()
     return jsonify({'message': 'Bookmark removed'})
 
 # ── Reading Progress ──
@@ -142,42 +189,50 @@ def update_reading_progress():
     content_id = data.get('content_id')
     progress = data.get('progress_percent', 0)
     last_page = data.get('last_page', 0)
-    
+
     if not content_id:
         return jsonify({'error': 'Content ID is required'}), 400
-    
-    db = get_db()
-    existing = db.execute(
-        'SELECT id FROM reading_progress WHERE user_id = ? AND content_id = ?',
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        'SELECT id FROM reading_progress WHERE user_id = %s AND content_id = %s',
         (g.user_id, content_id)
-    ).fetchone()
-    
+    )
+    existing = cur.fetchone()
+
     if existing:
-        db.execute('''
-            UPDATE reading_progress SET progress_percent = ?, last_page = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ? AND content_id = ?
+        cur.execute('''
+            UPDATE reading_progress SET progress_percent = %s, last_page = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s AND content_id = %s
         ''', (progress, last_page, g.user_id, content_id))
     else:
-        db.execute('''
+        cur.execute('''
             INSERT INTO reading_progress (user_id, content_id, progress_percent, last_page)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         ''', (g.user_id, content_id, progress, last_page))
-    
-    db.commit()
-    db.close()
+
+    conn.commit()
+    cur.close()
+    conn.close()
     return jsonify({'message': 'Progress updated'})
 
 @users_bp.route('/api/reading-progress/<int:content_id>', methods=['GET'])
 @login_required
 def get_reading_progress(content_id):
-    db = get_db()
-    progress = db.execute(
-        'SELECT * FROM reading_progress WHERE user_id = ? AND content_id = ?',
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        'SELECT * FROM reading_progress WHERE user_id = %s AND content_id = %s',
         (g.user_id, content_id)
-    ).fetchone()
-    db.close()
-    
+    )
+    progress = cur.fetchone()
+    cur.close()
+    conn.close()
+
     if progress:
+        if 'updated_at' in progress and progress['updated_at']:
+            progress['updated_at'] = str(progress['updated_at'])
         return jsonify({'progress': dict(progress)})
     return jsonify({'progress': None})
 
@@ -186,34 +241,38 @@ def get_reading_progress(content_id):
 @users_bp.route('/api/users/dashboard', methods=['GET'])
 @login_required
 def user_dashboard():
-    db = get_db()
-    
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
     # Get purchased content
-    purchased = db.execute('''
+    cur.execute('''
         SELECT c.id, c.title, c.author, c.category, c.cover_image, c.page_count,
                rp.progress_percent, rp.last_page
         FROM user_content_access uca
         JOIN content c ON uca.content_id = c.id
-        LEFT JOIN reading_progress rp ON rp.content_id = c.id AND rp.user_id = ?
-        WHERE uca.user_id = ?
+        LEFT JOIN reading_progress rp ON rp.content_id = c.id AND rp.user_id = %s
+        WHERE uca.user_id = %s
         ORDER BY uca.granted_at DESC
-    ''', (g.user_id, g.user_id)).fetchall()
-    
+    ''', (g.user_id, g.user_id))
+    purchased = cur.fetchall()
+
     # Get bookmarks count
-    bookmarks_count = db.execute('SELECT COUNT(*) as c FROM bookmarks WHERE user_id = ?', (g.user_id,)).fetchone()['c']
-    
+    cur.execute('SELECT COUNT(*) as c FROM bookmarks WHERE user_id = %s', (g.user_id,))
+    bookmarks_count = cur.fetchone()['c']
+
     # Get total spent
-    total_spent_row = db.execute(
-        'SELECT COALESCE(SUM(amount), 0) as t FROM payments WHERE user_id = ? AND status = "confirmed"',
+    cur.execute(
+        "SELECT COALESCE(SUM(amount), 0) as t FROM payments WHERE user_id = %s AND status = 'confirmed'",
         (g.user_id,)
-    ).fetchone()
-    total_spent = total_spent_row['t']
-    
-    db.close()
-    
+    )
+    total_spent = cur.fetchone()['t']
+
+    cur.close()
+    conn.close()
+
     return jsonify({
         'purchased_content': [dict(p) for p in purchased],
         'bookmarks_count': bookmarks_count,
-        'total_spent': total_spent,
+        'total_spent': float(total_spent),
         'total_purchased': len(purchased)
     })

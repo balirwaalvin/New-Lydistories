@@ -3,17 +3,21 @@ import os
 from database import get_db
 from routes.auth import login_required, admin_required, optional_auth
 from PyPDF2 import PdfReader
+import psycopg2.extras
 
 content_bp = Blueprint('content', __name__)
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'server', 'uploads')
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Recalculate relative to server dir
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), '..', 'uploads')
 UPLOAD_DIR = os.path.abspath(UPLOAD_DIR)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+def _serialize_content(row):
+    """Convert a content row dict so all values are JSON-serializable."""
+    d = dict(row)
+    for key in ('created_at', 'updated_at'):
+        if key in d and d[key] is not None:
+            d[key] = str(d[key])
+    return d
 
 @content_bp.route('/api/content', methods=['GET'])
 @optional_auth
@@ -21,73 +25,80 @@ def list_content():
     category = request.args.get('category', '')
     search = request.args.get('search', '')
     featured = request.args.get('featured', '')
-    
-    db = get_db()
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     query = 'SELECT id, title, author, category, description, preview_text, cover_image, page_count, price, is_featured, created_at FROM content WHERE 1=1'
     params = []
-    
+
     if category:
-        query += ' AND category = ?'
+        query += ' AND category = %s'
         params.append(category)
     if search:
-        query += ' AND (title LIKE ? OR author LIKE ? OR description LIKE ?)'
+        query += ' AND (title ILIKE %s OR author ILIKE %s OR description ILIKE %s)'
         params.extend([f'%{search}%'] * 3)
     if featured:
-        query += ' AND is_featured = 1'
-    
+        query += ' AND is_featured = TRUE'
+
     query += ' ORDER BY created_at DESC'
-    
-    rows = db.execute(query, params).fetchall()
-    content_list = [dict(row) for row in rows]
-    
+
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    content_list = [_serialize_content(row) for row in rows]
+
     # Check user access for each content item
     if g.user_id:
         for item in content_list:
-            access = db.execute(
-                'SELECT id FROM user_content_access WHERE user_id = ? AND content_id = ?',
+            cur.execute(
+                'SELECT id FROM user_content_access WHERE user_id = %s AND content_id = %s',
                 (g.user_id, item['id'])
-            ).fetchone()
+            )
+            access = cur.fetchone()
             item['has_access'] = access is not None
-            # Admin always has access
             if g.user_role == 'admin':
                 item['has_access'] = True
     else:
         for item in content_list:
             item['has_access'] = False
-    
-    db.close()
+
+    cur.close()
+    conn.close()
     return jsonify({'content': content_list})
 
 @content_bp.route('/api/content/<int:content_id>', methods=['GET'])
 @optional_auth
 def get_content(content_id):
-    db = get_db()
-    item = db.execute('SELECT * FROM content WHERE id = ?', (content_id,)).fetchone()
-    
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute('SELECT * FROM content WHERE id = %s', (content_id,))
+    item = cur.fetchone()
+
     if not item:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Content not found'}), 404
-    
-    result = dict(item)
+
+    result = _serialize_content(item)
     has_access = False
-    
+
     if g.user_id:
-        access = db.execute(
-            'SELECT id FROM user_content_access WHERE user_id = ? AND content_id = ?',
+        cur.execute(
+            'SELECT id FROM user_content_access WHERE user_id = %s AND content_id = %s',
             (g.user_id, content_id)
-        ).fetchone()
+        )
+        access = cur.fetchone()
         has_access = access is not None
         if g.user_role == 'admin':
             has_access = True
-    
+
     result['has_access'] = has_access
-    
+
     if not has_access:
-        # Only return preview for non-paid users
         result.pop('full_text', None)
         result.pop('file_path', None)
-    
-    db.close()
+
+    cur.close()
+    conn.close()
     return jsonify({'content': result})
 
 @content_bp.route('/api/content', methods=['POST'])
@@ -99,15 +110,15 @@ def create_content():
     description = request.form.get('description', '').strip()
     preview_text = request.form.get('preview_text', '').strip()
     price = float(request.form.get('price', 5000))
-    is_featured = int(request.form.get('is_featured', 0))
-    
+    is_featured = request.form.get('is_featured', '0') in ('1', 'true', 'True')
+
     if not title:
         return jsonify({'error': 'Title is required'}), 400
-    
+
     full_text = ''
     file_path = None
     page_count = 0
-    
+
     # Handle PDF upload
     if 'pdf_file' in request.files:
         pdf_file = request.files['pdf_file']
@@ -116,8 +127,7 @@ def create_content():
             filepath = os.path.join(UPLOAD_DIR, filename)
             pdf_file.save(filepath)
             file_path = filename
-            
-            # Extract text from PDF
+
             try:
                 reader = PdfReader(filepath)
                 page_count = len(reader.pages)
@@ -127,13 +137,12 @@ def create_content():
                     if text:
                         text_parts.append(text)
                 full_text = '\n\n'.join(text_parts)
-                
-                # Auto-generate preview if not provided
+
                 if not preview_text and full_text:
                     preview_text = full_text[:500] + '...'
             except Exception as e:
                 print(f"PDF extraction error: {e}")
-    
+
     # Handle cover image
     cover_image = None
     if 'cover_image' in request.files:
@@ -143,35 +152,41 @@ def create_content():
             img_path = os.path.join(UPLOAD_DIR, img_filename)
             img_file.save(img_path)
             cover_image = img_filename
-    
-    # If full_text provided directly (for non-PDF content)
+
     if not full_text and request.form.get('full_text'):
         full_text = request.form.get('full_text', '')
-    
-    db = get_db()
-    cursor = db.execute('''
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute('''
         INSERT INTO content (title, author, category, description, preview_text, cover_image, file_path, full_text, page_count, price, is_featured)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
     ''', (title, author, category, description, preview_text, cover_image, file_path, full_text, page_count, price, is_featured))
-    
-    content_id = cursor.lastrowid
-    db.commit()
-    
-    new_item = db.execute('SELECT * FROM content WHERE id = ?', (content_id,)).fetchone()
-    db.close()
-    
-    return jsonify({'content': dict(new_item)}), 201
+
+    content_id = cur.fetchone()['id']
+    conn.commit()
+
+    cur.execute('SELECT * FROM content WHERE id = %s', (content_id,))
+    new_item = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    return jsonify({'content': _serialize_content(new_item)}), 201
 
 @content_bp.route('/api/content/<int:content_id>', methods=['PUT'])
 @admin_required
 def update_content(content_id):
-    db = get_db()
-    existing = db.execute('SELECT * FROM content WHERE id = ?', (content_id,)).fetchone()
-    
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute('SELECT * FROM content WHERE id = %s', (content_id,))
+    existing = cur.fetchone()
+
     if not existing:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Content not found'}), 404
-    
+
     # Support both form-data and JSON
     if request.content_type and 'multipart/form-data' in request.content_type:
         title = request.form.get('title', existing['title'])
@@ -180,7 +195,7 @@ def update_content(content_id):
         description = request.form.get('description', existing['description'])
         preview_text = request.form.get('preview_text', existing['preview_text'])
         price = float(request.form.get('price', existing['price']))
-        is_featured = int(request.form.get('is_featured', existing['is_featured']))
+        is_featured = request.form.get('is_featured', str(existing['is_featured'])) in ('1', 'true', 'True')
         full_text = request.form.get('full_text', existing['full_text'])
     else:
         data = request.get_json() or {}
@@ -190,13 +205,13 @@ def update_content(content_id):
         description = data.get('description', existing['description'])
         preview_text = data.get('preview_text', existing['preview_text'])
         price = float(data.get('price', existing['price']))
-        is_featured = int(data.get('is_featured', existing['is_featured']))
+        is_featured = data.get('is_featured', existing['is_featured'])
         full_text = data.get('full_text', existing['full_text'])
-    
+
     file_path = existing['file_path']
     page_count = existing['page_count']
     cover_image = existing['cover_image']
-    
+
     # Handle new PDF upload
     if request.files and 'pdf_file' in request.files:
         pdf_file = request.files['pdf_file']
@@ -205,7 +220,7 @@ def update_content(content_id):
             filepath = os.path.join(UPLOAD_DIR, filename)
             pdf_file.save(filepath)
             file_path = filename
-            
+
             try:
                 reader = PdfReader(filepath)
                 page_count = len(reader.pages)
@@ -217,7 +232,7 @@ def update_content(content_id):
                 full_text = '\n\n'.join(text_parts)
             except Exception as e:
                 print(f"PDF extraction error: {e}")
-    
+
     # Handle new cover image
     if request.files and 'cover_image' in request.files:
         img_file = request.files['cover_image']
@@ -226,37 +241,43 @@ def update_content(content_id):
             img_path = os.path.join(UPLOAD_DIR, img_filename)
             img_file.save(img_path)
             cover_image = img_filename
-    
-    db.execute('''
-        UPDATE content SET title=?, author=?, category=?, description=?, preview_text=?,
-        cover_image=?, file_path=?, full_text=?, page_count=?, price=?, is_featured=?,
-        updated_at=CURRENT_TIMESTAMP WHERE id=?
+
+    cur.execute('''
+        UPDATE content SET title=%s, author=%s, category=%s, description=%s, preview_text=%s,
+        cover_image=%s, file_path=%s, full_text=%s, page_count=%s, price=%s, is_featured=%s,
+        updated_at=CURRENT_TIMESTAMP WHERE id=%s
     ''', (title, author, category, description, preview_text, cover_image, file_path,
           full_text, page_count, price, is_featured, content_id))
-    
-    db.commit()
-    updated = db.execute('SELECT * FROM content WHERE id = ?', (content_id,)).fetchone()
-    db.close()
-    
-    return jsonify({'content': dict(updated)})
+
+    conn.commit()
+    cur.execute('SELECT * FROM content WHERE id = %s', (content_id,))
+    updated = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    return jsonify({'content': _serialize_content(updated)})
 
 @content_bp.route('/api/content/<int:content_id>', methods=['DELETE'])
 @admin_required
 def delete_content(content_id):
-    db = get_db()
-    existing = db.execute('SELECT * FROM content WHERE id = ?', (content_id,)).fetchone()
-    
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT id FROM content WHERE id = %s', (content_id,))
+    existing = cur.fetchone()
+
     if not existing:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Content not found'}), 404
-    
+
     # Delete associated records
-    db.execute('DELETE FROM bookmarks WHERE content_id = ?', (content_id,))
-    db.execute('DELETE FROM reading_progress WHERE content_id = ?', (content_id,))
-    db.execute('DELETE FROM user_content_access WHERE content_id = ?', (content_id,))
-    db.execute('DELETE FROM payments WHERE content_id = ?', (content_id,))
-    db.execute('DELETE FROM content WHERE id = ?', (content_id,))
-    db.commit()
-    db.close()
-    
+    cur.execute('DELETE FROM bookmarks WHERE content_id = %s', (content_id,))
+    cur.execute('DELETE FROM reading_progress WHERE content_id = %s', (content_id,))
+    cur.execute('DELETE FROM user_content_access WHERE content_id = %s', (content_id,))
+    cur.execute('DELETE FROM payments WHERE content_id = %s', (content_id,))
+    cur.execute('DELETE FROM content WHERE id = %s', (content_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
     return jsonify({'message': 'Content deleted successfully'})

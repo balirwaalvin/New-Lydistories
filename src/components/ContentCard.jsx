@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { FiBookOpen, FiFileText, FiBook, FiFile } from 'react-icons/fi';
+import { API_URL } from '../context/AuthContext';
 import './ContentCard.css';
 
 const categoryIcons = { book: FiBook, guide: FiBookOpen, article: FiFileText, document: FiFile };
@@ -13,7 +14,7 @@ export default function ContentCard({ item }) {
     <Link to={`/content/${item.id}`} className="content-card card">
       <div className="card-cover" style={{ borderColor: color }}>
         {item.cover_image ? (
-          <img src={`http://localhost:5000/uploads/${item.cover_image}`} alt={item.title} />
+          <img src={`${API_URL}/uploads/${item.cover_image}`} alt={item.title} />
         ) : (
           <div className="card-cover-placeholder" style={{ background: `linear-gradient(135deg, ${color}22, ${color}44)` }}>
             <Icon style={{ color, fontSize: '2.5rem' }} />

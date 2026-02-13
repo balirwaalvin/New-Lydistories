@@ -5,6 +5,7 @@ import datetime
 import os
 import functools
 from database import get_db
+import psycopg2.extras
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -80,30 +81,39 @@ def register():
     name = data.get('name', '').strip()
     email = data.get('email', '').strip().lower()
     password = data.get('password', '')
-    
+
     if not name or not email or not password:
         return jsonify({'error': 'Name, email and password are required'}), 400
     if len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
-    
-    db = get_db()
-    existing = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute('SELECT id FROM users WHERE email = %s', (email,))
+    existing = cur.fetchone()
     if existing:
-        db.close()
+        cur.close()
+        conn.close()
         return jsonify({'error': 'Email already registered'}), 409
-    
+
     pw_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    cursor = db.execute(
-        'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
+    cur.execute(
+        'INSERT INTO users (name, email, password_hash) VALUES (%s, %s, %s) RETURNING id',
         (name, email, pw_hash)
     )
-    user_id = cursor.lastrowid
-    db.commit()
-    
+    user_id = cur.fetchone()['id']
+    conn.commit()
+
     token = create_token(user_id, 'user')
-    user = db.execute('SELECT id, name, email, role, created_at FROM users WHERE id = ?', (user_id,)).fetchone()
-    db.close()
-    
+    cur.execute('SELECT id, name, email, role, created_at FROM users WHERE id = %s', (user_id,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    # Convert datetime to string for JSON
+    user['created_at'] = str(user['created_at'])
+
     return jsonify({
         'token': token,
         'user': dict(user)
@@ -114,22 +124,25 @@ def login():
     data = request.get_json()
     email = data.get('email', '').strip().lower()
     password = data.get('password', '')
-    
+
     if not email or not password:
         return jsonify({'error': 'Email and password are required'}), 400
-    
-    db = get_db()
-    user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-    db.close()
-    
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute('SELECT * FROM users WHERE email = %s', (email,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+
     if not user:
         return jsonify({'error': 'Invalid email or password'}), 401
-    
+
     if not bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
         return jsonify({'error': 'Invalid email or password'}), 401
-    
+
     token = create_token(user['id'], user['role'])
-    
+
     return jsonify({
         'token': token,
         'user': {
@@ -137,18 +150,22 @@ def login():
             'name': user['name'],
             'email': user['email'],
             'role': user['role'],
-            'created_at': user['created_at']
+            'created_at': str(user['created_at'])
         }
     })
 
 @auth_bp.route('/api/auth/me', methods=['GET'])
 @login_required
 def get_me():
-    db = get_db()
-    user = db.execute('SELECT id, name, email, role, created_at FROM users WHERE id = ?', (g.user_id,)).fetchone()
-    db.close()
-    
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute('SELECT id, name, email, role, created_at FROM users WHERE id = %s', (g.user_id,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    
+
+    user['created_at'] = str(user['created_at'])
     return jsonify({'user': dict(user)})

@@ -29,7 +29,10 @@ def serve_upload(filename):
 def health():
     return {'status': 'ok', 'app': 'Lydistories API'}
 
+# Initialize database tables on startup (works with both gunicorn and flask run)
+init_db()
+
 if __name__ == '__main__':
-    init_db()
-    print("\n🔥 Lydistories API running on http://localhost:5000\n")
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    print(f"\n🔥 Lydistories API running on http://localhost:{port}\n")
+    app.run(debug=True, host='0.0.0.0', port=port)
