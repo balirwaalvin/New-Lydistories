@@ -2,34 +2,22 @@ name: lydistories
 region: lon1
 
 services:
-  - name: lydistories-api
+  - name: lydistories
     github:
       repo: balirwaalvin/New-Lydistories
       branch: main
       deploy_on_push: true
-    source_dir: server
-    build_command: pip install -r requirements.txt
-    run_command: gunicorn app:app --bind 0.0.0.0:8080 --workers 2
+    source_dir: /
+    environment_slug: python
+    build_command: bash build.sh
+    run_command: cd server && gunicorn app:app --bind 0.0.0.0:8080 --workers 2
     http_port: 8080
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
     envs:
       - key: DATABASE_URL
-        value: "${db.DATABASE_URL}"
+        value: "your-database-url-here"
         type: SECRET
       - key: JWT_SECRET
         value: "lydistories-production-jwt-secret-2026"
         type: SECRET
-
-static_sites:
-  - name: lydistories-web
-    github:
-      repo: balirwaalvin/New-Lydistories
-      branch: main
-      deploy_on_push: true
-    build_command: npm install && npm run build
-    output_dir: dist
-    envs:
-      - key: VITE_API_URL
-        value: ${lydistories-api.PUBLIC_URL}
-        type: GENERAL

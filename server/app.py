@@ -1,4 +1,4 @@
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
 import os
 
@@ -29,10 +29,25 @@ def serve_upload(filename):
 def health():
     return {'status': 'ok', 'app': 'Lydistories API'}
 
-# Initialize database tables on startup (works with both gunicorn and flask run)
+# ── Serve React frontend ──
+# The built React app lives in ../dist (one level up from server/)
+DIST_DIR = os.path.join(os.path.dirname(__file__), '..', 'dist')
+DIST_DIR = os.path.abspath(DIST_DIR)
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serve the React app. API routes are handled by blueprints above."""
+    # If the requested file exists in dist, serve it
+    if path and os.path.exists(os.path.join(DIST_DIR, path)):
+        return send_from_directory(DIST_DIR, path)
+    # Otherwise serve index.html (for React Router client-side routing)
+    return send_from_directory(DIST_DIR, 'index.html')
+
+# Initialize database tables on startup
 init_db()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f"\n🔥 Lydistories API running on http://localhost:{port}\n")
+    print(f"\n🔥 Lydistories running on http://localhost:{port}\n")
     app.run(debug=True, host='0.0.0.0', port=port)
