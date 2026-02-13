@@ -7,10 +7,7 @@ services:
       repo: balirwaalvin/New-Lydistories
       branch: main
       deploy_on_push: true
-    source_dir: /
-    environment_slug: python
-    build_command: bash build.sh
-    run_command: cd server && gunicorn app:app --bind 0.0.0.0:8080 --workers 2
+    dockerfile_path: Dockerfile
     http_port: 8080
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
