@@ -18,10 +18,20 @@
       content="Access a growing collection of books, study guides, articles, and documentation. Knowledge at your fingertips."
     />
     <meta property="og:image" content="/logo.png" />
+    <link rel="manifest" href="/manifest.json" />
     <title>Lydistories — Digital Reading Platform</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('SW registered!', reg))
+            .catch(err => console.log('SW registration failed!', err));
+        });
+      }
+    </script>
   </body>
 </html>
