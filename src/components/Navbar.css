@@ -36,6 +36,7 @@
   font-weight: 800;
   font-size: 1.3rem;
   background: linear-gradient(135deg, #fff 0%, #ccc 100%);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -44,6 +45,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.mobile-auth-buttons {
+  display: none;
 }
 
 .navbar-links a {
@@ -248,17 +253,38 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(13,13,13,0.97);
+    height: calc(100vh - 70px);
+    background: #0d0d0d; /* Solid background */
     flex-direction: column;
     padding: 32px 24px;
     gap: 8px;
+    overflow-y: auto;
+    z-index: 1001; /* Ensure higher than other fixed elements */
+    border-top: 1px solid rgba(255,255,255,0.06);
   }
   .navbar-links.open { display: flex; }
   .navbar-links a {
     font-size: 1.1rem;
     padding: 14px 20px;
     width: 100%;
+    margin: 0; /* Clear any margin */
   }
+  
   .mobile-menu { display: flex; }
   .auth-buttons { display: none; }
+  
+  .mobile-auth-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  
+  .mobile-auth-buttons .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }

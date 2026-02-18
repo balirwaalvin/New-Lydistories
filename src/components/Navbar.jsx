@@ -34,6 +34,13 @@ export default function Navbar() {
           <Link to="/browse" onClick={() => setMenuOpen(false)}>Browse</Link>
           {user && <Link to="/dashboard" onClick={() => setMenuOpen(false)}>My Library</Link>}
           {isAdmin && <Link to="/admin" onClick={() => setMenuOpen(false)} className="admin-link">Admin</Link>}
+          
+          {!user && (
+            <div className="mobile-auth-buttons">
+              <Link to="/login" className="btn btn-ghost" onClick={() => setMenuOpen(false)}>Log in</Link>
+              <Link to="/register" className="btn btn-primary" onClick={() => setMenuOpen(false)}>Sign up</Link>
+            </div>
+          )}
         </div>
 
         <div className="navbar-actions">
