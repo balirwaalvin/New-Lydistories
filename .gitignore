@@ -7,9 +7,11 @@ dist/
 # Environment files
 .env
 .env.local
+server/.env
 
-# Database
+# Database files
 server/*.db
+*.db
 
 # Uploads (user-generated)
 server/uploads/*.pdf
@@ -29,3 +31,13 @@ Thumbs.db
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Debug/test scripts (should not be committed)
+check_db.py
+test_db_connect.py
