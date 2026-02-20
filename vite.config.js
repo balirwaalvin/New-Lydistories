@@ -9,12 +9,6 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
-<<<<<<< HEAD
-        secure: false,
-      },
-    },
-  },
-=======
       },
       '/uploads': {
         target: 'http://localhost:5000',
@@ -22,5 +16,4 @@ export default defineConfig({
       }
     }
   }
->>>>>>> 7bc014f (Fix login fetching bug and configure concurrently runner)
 })
