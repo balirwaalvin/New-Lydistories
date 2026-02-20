@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/Lydistories.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Lydistories — Your digital library for books, study guides, articles, and expert documentation. Read anywhere, anytime."
+    />
+    <meta name="theme-color" content="#C41E24" />
+    <meta
+      property="og:title"
+      content="Lydistories — Digital Reading Platform"
+    />
+    <meta
+      property="og:description"
+      content="Access a growing collection of books, study guides, articles, and documentation. Knowledge at your fingertips."
+    />
+    <meta property="og:image" content="/Lydistories.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Lydistories — Digital Reading Platform</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('SW registered!', reg))
+            .catch(err => console.log('SW registration failed!', err));
+        });
+      }
+    </script>
+  </body>
+</html>

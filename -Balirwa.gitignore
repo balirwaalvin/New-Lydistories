@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.local
+server/.env
+
+# Database files
+server/*.db
+*.db
+
+# Uploads (user-generated)
+server/uploads/*.pdf
+server/uploads/*.png
+server/uploads/*.jpg
+server/uploads/*.jpeg
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Debug/test scripts (should not be committed)
+check_db.py
+test_db_connect.py

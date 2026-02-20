@@ -3,21 +3,17 @@ from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 
-<<<<<<< HEAD
 load_dotenv()
-=======
-# Load .env using the absolute path of this file's directory
-_here = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(_here, '.env'))
->>>>>>> 7bc014f (Fix login fetching bug and configure concurrently runner)
 
 from database import init_db
 from routes.auth import auth_bp
 from routes.content import content_bp
 from routes.payments import payments_bp
 from routes.users import users_bp
+from routes.profile import profile_bp
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB max upload
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Register blueprints
@@ -25,6 +21,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(content_bp)
 app.register_blueprint(payments_bp)
 app.register_blueprint(users_bp)
+app.register_blueprint(profile_bp)
 
 # Serve uploaded files
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
@@ -58,10 +55,5 @@ init_db()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-<<<<<<< HEAD
     print(f"\n Lydistories running on http://localhost:{port}\n")
-=======
-    print(f"\n Lydistories API running on http://localhost:{port}\n")
->>>>>>> 7bc014f (Fix login fetching bug and configure concurrently runner)
     app.run(debug=True, host='0.0.0.0', port=port)
-
